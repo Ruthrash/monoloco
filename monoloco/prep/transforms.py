@@ -81,9 +81,14 @@ def flip_labels(boxes_gt, labels, im_w):
     boxes_flip = deepcopy(boxes_gt)
     labels_flip = deepcopy(labels)
 
+
     for idx, label_flip in enumerate(labels_flip):
 
         # Flip the box and account for disparity
+        
+        if label_flip[2] == 0.0 :
+            print('flip',label_flip, im_w )
+            label_flip[2] = 0.1    
         disp = BF / label_flip[2]
         temp = boxes_flip[idx][2]
         boxes_flip[idx][2] = im_w - boxes_flip[idx][0] + disp

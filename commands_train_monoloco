@@ -1,0 +1,7 @@
+Preprocessing:
+
+python3 -m openpifpaf.predict \
+--glob "/media/ruthz/data/cvgl/group/jrdb/data/train_dataset/images/image_stitched/**/*.jpg" \
+--json-output /media/ruthz/data/monoloco_new \
+--checkpoint=shufflenetv2k30 \
+--instance-threshold=0.05 --seed-threshold 0.05 --force-complete-pose 

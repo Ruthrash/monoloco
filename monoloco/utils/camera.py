@@ -215,10 +215,10 @@ def to_spherical(xyz):
     xyz = np.array(xyz)
     r = np.linalg.norm(xyz)
     theta = math.atan2(xyz[2], xyz[0])
-
-    assert 0 <= theta < math.pi   # 0 when positive x and no z.
+    ##jrdbcorrections
+    #assert 0 <= theta < math.pi   # 0 when positive x and no z.
     psi = math.acos(xyz[1] / r)
-    assert 0 <= psi <= math.pi
+    #assert 0 <= psi <= math.pi
     return [r, theta, psi]
 
 

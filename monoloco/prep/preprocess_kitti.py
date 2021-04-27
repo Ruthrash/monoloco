@@ -97,14 +97,14 @@ class PreprocessKitti:
             self.stats['gt_' + self.phase] += len(boxes_gt)
             self.stats['gt_files'] += 1
             self.stats['gt_files_ped'] += min(len(boxes_gt), 1)  # if no boxes 0 else 1
-            self.dic_names[basename + '.png']['boxes'] = copy.deepcopy(boxes_gt)
-            self.dic_names[basename + '.png']['ys'] = copy.deepcopy(labels)
+            self.dic_names[basename + '.jpg']['boxes'] = copy.deepcopy(boxes_gt)
+            self.dic_names[basename + '.jpg']['ys'] = copy.deepcopy(labels)
 
             # Extract annotations
             dic_boxes, dic_kps, dic_gt = self.parse_annotations(boxes_gt, labels, basename)
             if dic_boxes is None:  # No annotations
                 continue
-            self.dic_names[basename + '.png']['K'] = copy.deepcopy(dic_gt['K'])
+            self.dic_names[basename + '.jpg']['K'] = copy.deepcopy(dic_gt['K'])
             self.dic_jo[self.phase]['K'].append(dic_gt['K'])
 
             # Match each set of keypoint with a ground truth
@@ -135,7 +135,7 @@ class PreprocessKitti:
 
     def parse_annotations(self, boxes_gt, labels, basename):
 
-        path_im = os.path.join(self.dir_images, basename + '.png')
+        path_im = os.path.join(self.dir_images, basename + '.jpg')
         path_calib = os.path.join(self.dir_kk, basename + '.txt')
         min_conf = 0 if self.phase == 'train' else 0.1
 
@@ -162,6 +162,7 @@ class PreprocessKitti:
 
         elif self.phase == 'train':
             # GT)
+            #print(basename)
             boxes_gt_flip, ys_flip = flip_labels(boxes_gt, labels, im_w=width)
             # New left
             boxes_flip = flip_inputs(boxes_r, im_w=width, mode='box')
@@ -349,17 +350,22 @@ def parse_ground_truth(path_gt, category, spherical=False):
             line = line_gt.split()
             if not check_conditions(line_gt, category, method='gt'):
                 continue
-            truncs_gt.append(float(line[1]))
-            occs_gt.append(int(line[2]))
-            boxes_gt.append([float(x) for x in line[4:8]])
-            xyz = [float(x) for x in line[11:14]]
-            hwl = [float(x) for x in line[8:11]]
+            truncs_gt.append(float(line[1]))##
+            occs_gt.append(int(line[2]))##
+            boxes_gt.append([float(x) for x in line[5:9]])##
+            xyz = [float(x) for x in line[12:15]]###
+            hwl = [float(x) for x in line[9:12]]
             dd = float(math.sqrt(xyz[0] ** 2 + xyz[1] ** 2 + xyz[2] ** 2))
-            yaw = float(line[14])
-            assert - math.pi <= yaw <= math.pi
-            alpha = float(line[3])
+            yaw = float(line[15])
+            ##jrdbcorrections
+            #print(yaw)
+            #print(f_gt)
+            #assert - math.pi <= yaw <= math.pi
+            alpha = float(line[4])
             sin, cos, yaw_corr = correct_angle(yaw, xyz)
-            assert min(abs(-yaw_corr - alpha), (abs(yaw_corr - alpha))) < 0.15, "more than 10 degrees of error"
+            ##jrdbcorrections
+            #print(min(abs(-yaw_corr - alpha), (abs(yaw_corr - alpha))))
+            #assert min(abs(-yaw_corr - alpha), (abs(yaw_corr - alpha))) < 0.15, "more than 10 degrees of error"
             if spherical:
                 rtp = to_spherical(xyz)
                 loc = rtp[1:3] + xyz[2:3] + rtp[0:1]  # [theta, psi, z, r]
@@ -380,12 +386,12 @@ def factory_file(path_calib, dir_ann, basename, ann_type='left'):
 
     if ann_type == 'left':
         kk, tt = p_left[:]
-        path_ann = os.path.join(dir_ann, basename + '.png.predictions.json')
+        path_ann = os.path.join(dir_ann, basename + '.jpg.predictions.json')
 
     # The right folder is called <NameOfLeftFolder>_right
     else:
         kk, tt = p_right[:]
-        path_ann = os.path.join(dir_ann + '_right', basename + '.png.predictions.json')
+        path_ann = os.path.join(dir_ann + '_right', basename + '.jpg.predictions.json')
 
     annotations = open_annotations(path_ann)
 

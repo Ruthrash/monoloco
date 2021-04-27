@@ -24,7 +24,7 @@ def get_calibration(path_txt):
     xyz_temp2 = np.dot(kk_1, uv_1)
     xyz_new_2 = xyz_temp2 * xyz_2[2]
     xyz_fin_2 = xyz_new_2 - tt
-    """
+    
 
     with open(path_txt, "r") as ff:
         file = ff.readlines()
@@ -38,7 +38,14 @@ def get_calibration(path_txt):
 
     kk, tt = get_translation(p2)
     kk_right, tt_right = get_translation(p3)
-
+   
+    return [kk, tt], [kk_right, tt_right]
+    """
+    ##jrdbcorrections
+    kk = [[480.459, 0.0, 355.144],[0.0, 482.924,209.383],[0.0, 0.0, 1.0]]
+    kk_right = [[483.254, 0.0, 353.499],[0.0, 485.78, 192.371],[0.0, 0.0, 1.0]]
+    tt = [0.0, 0.0, 0.0]
+    tt_right = [0.0, 0.0, 0.0]
     return [kk, tt], [kk_right, tt_right]
 
 
@@ -119,9 +126,10 @@ def split_training(names_gt, path_train, path_val):
             set_val.add(line[:-1] + '.txt')
 
     set_train = set_gt.intersection(set_train)
-    set_train.remove('000518.txt')
-    set_train.remove('005692.txt')
-    set_train.remove('003009.txt')
+    ##jrdbcorrections
+    #set_train.remove('000518.txt')
+    #set_train.remove('005692.txt')
+    #set_train.remove('003009.txt')
     set_train = tuple(set_train)
     set_val = tuple(set_gt.intersection(set_val))
     assert set_train and set_val, "No validation or training annotations"

@@ -225,6 +225,7 @@ class Trainer:
             self.cout_stats(dic_err['val'], size_eval, clst='all')
             # Evaluate performances on different clusters and save statistics
             for clst in self.clusters:
+                print("clusters", self.clusters)
                 inputs, labels, size_eval = dataset.get_cluster_annotations(clst)
                 inputs, labels = inputs.to(self.device), labels.to(self.device)
 
