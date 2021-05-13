@@ -135,7 +135,24 @@ def split_training(names_gt, path_train, path_val):
     assert set_train and set_val, "No validation or training annotations"
     return set_train, set_val
 
-
+def split_training_jrdb(base_dir, path_train, path_val):
+    set_train = set()
+    set_val  = set()
+    
+    
+    with open(path_train, 'r') as f_train: 
+        for line in f_train:
+            for file_ in glob.glob(base_dir+"/"+line[:-1]+"/*.txt"):
+                #print(file_)
+                set_train.add(file_)
+    with open(path_val, 'r') as f_val: 
+        for line in f_val: 
+            for file_ in glob.glob(base_dir+"/"+line[:-1]+"/*.txt"):
+                #print(file_)
+                set_val.add(file_)
+    set_train = tuple(set_train)
+    set_val = tuple(set_val) 
+    return set_train, set_val
 def factory_basename(dir_ann, dir_gt):
     """ Return all the basenames in the annotations folder corresponding to validation images"""
 

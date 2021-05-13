@@ -2,7 +2,7 @@
 
 import argparse
 
-from openpifpaf import decoder, network, visualizer, show, logger
+#from openpifpaf import decoder, network, visualizer, show, logger
 
 
 def cli():
@@ -41,11 +41,11 @@ def cli():
     predict_parser.add_argument('--decoder-workers', default=None, type=int,
                                 help='number of workers for pose decoding, 0 for windows')
 
-    decoder.cli(parser)
-    logger.cli(parser)
-    network.Factory.cli(parser)
-    show.cli(parser)
-    visualizer.cli(parser)
+    # decoder.cli(parser)
+    # logger.cli(parser)
+    # network.Factory.cli(parser)
+    # show.cli(parser)
+    # visualizer.cli(parser)
 
     predict_parser.add_argument('--mode', help='keypoints, mono, stereo', default='mono')
     predict_parser.add_argument('--model', help='path of MonoLoco/MonStereo model to load')
@@ -134,6 +134,10 @@ def main():
         if 'nuscenes' in args.dataset:
             from .prep.preprocess_nu import PreprocessNuscenes
             prep = PreprocessNuscenes(args.dir_ann, args.dir_nuscenes, args.dataset, args.iou_min)
+            prep.run()
+        if "jrdb" in args.dataset:
+            from .prep.preprocess_jrdb import PreprocessJRDB
+            prep = PreprocessJRDB(args.dir_ann)
             prep.run()
         else:
             from .prep.preprocess_kitti import PreprocessKitti

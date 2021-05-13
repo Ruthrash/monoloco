@@ -54,9 +54,9 @@ def preprocess_monoloco(keypoints, kk, zero_center=False):
     if isinstance(kk, list):
         kk = torch.tensor(kk)
     # Projection in normalized image coordinates and zero-center with the center of the bounding box
-    uv_center = get_keypoints(keypoints, mode='center')
-    xy1_center = pixel_to_camera(uv_center, kk, 10)
-    xy1_all = pixel_to_camera(keypoints[:, 0:2, :], kk, 10)
+    uv_center = get_keypoints(keypoints, mode='center')##check this function 
+    xy1_center = pixel_to_camera(uv_center, kk, 10)##check this function 
+    xy1_all = pixel_to_camera(keypoints[:, 0:2, :], kk, 10) ##check this function 
     if zero_center:
         kps_norm = xy1_all - xy1_center.unsqueeze(1)  # (m, 17, 3) - (m, 1, 3)
     else:

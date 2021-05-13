@@ -1,6 +1,8 @@
 
 import json
-
+from math import sqrt
+#from monoloco.visuals.pifpaf_show import boxes
+import yaml
 import numpy as np
 
 
@@ -63,6 +65,36 @@ def get_iou_matches(boxes, boxes_gt, iou_min=0.3):
             used.append(idx_gt_max)
     return matches
 
+def get_iou_matches_jrdb(dic_annotations, iou_min=0.3):
+    """From 2 sets of boxes and a minimum threshold, compute the matching indices for IoU matches"""
+    
+    matches = []
+    used = []
+    if(len(list(dic_annotations['features'].keys())) == len(dic_annotations['labels']) ):
+        for annot_key in list(dic_annotations['features'].keys()):
+            matches.append(tuple((annot_key, annot_key)))
+    else:
+        print(len(list(dic_annotations['features'].keys())) , len(dic_annotations['labels']) )
+        for annot_key in list(dic_annotations['features'].keys()):
+            dists = dict()
+            for label_key in range(len(dic_annotations['labels'])):
+                if label_key not in used:
+                    dists[tuple((annot_key, label_key))] = distance3d(dic_annotations['features'][annot_key], dic_annotations['labels'][label_key])
+            values_list = list(dists.values()); keys_list = list(dists.keys())
+            if(len(values_list)!=0):
+                min = np.amin(values_list)
+                if min <= 0.5: 
+                    print(min,keys_list[values_list.index(min)])
+                    matches.append(keys_list[values_list.index(min)])
+                    used.append(keys_list[values_list.index(min)][1])
+    return matches
+
+def distance3d(dic_features, dic_labels):
+    dx = dic_features['x'] - dic_labels[0]
+    dy = dic_features['y'] - dic_labels[1]
+    dz = dic_features['z'] - dic_labels[2]
+    dist = dx**2 + dy**2 + dz**2
+    return sqrt(dist)
 
 def get_iou_matches_matrix(boxes, boxes_gt, thresh):
     """From 2 sets of boxes and a minimum threshold, compute the matching indices for IoU matchings"""
@@ -140,6 +172,15 @@ def open_annotations(path_ann):
     try:
         with open(path_ann, 'r') as f:
             annotations = json.load(f)
+    except FileNotFoundError:
+        annotations = []
+    return annotations
+
+def open_features(path_ann):
+    try:
+        with open(path_ann, 'r') as f:
+            print('feat',path_ann) 
+            annotations = yaml.load(f)
     except FileNotFoundError:
         annotations = []
     return annotations

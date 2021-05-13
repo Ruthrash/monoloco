@@ -2,6 +2,7 @@
 
 """Preprocess annotations with KITTI ground-truth"""
 
+from monoloco.visuals.pifpaf_show import boxes
 import os
 import glob
 import copy
@@ -16,20 +17,19 @@ from PIL import Image
 import torch
 
 from .. import __version__
-from ..utils import split_training, get_iou_matches, append_cluster, get_calibration, open_annotations, \
+from ..utils import split_training, split_training_jrdb,  get_iou_matches, get_iou_matches_jrdb, append_cluster, get_calibration, open_features, open_annotations, \
     extract_stereo_matches, make_new_directory, \
     check_conditions, to_spherical, correct_angle
 from ..network.process import preprocess_pifpaf, preprocess_monoloco
 from .transforms import flip_inputs, flip_labels, height_augmentation
 
 
-class PreprocessKitti:
+class PreprocessJRDB:
     """Prepare arrays with same format as nuScenes preprocessing but using ground truth txt files"""
 
     # KITTI Dataset files
-    dir_gt = os.path.join('data', 'kitti', 'gt')
-    dir_images = os.path.join('data', 'kitti', 'images')
-    dir_kk = os.path.join('data', 'kitti', 'calib')
+    #dir_gt = os.path.join('data', 'jrdb', 'gt')
+    dir_gt = '/home/ruthz/cvpr_challenge/JRDB/kitti_labels'
 
     # SOCIAL DISTANCING PARAMETERS
     THRESHOLD_DIST = 2  # Threshold to check distance of people
@@ -40,158 +40,129 @@ class PreprocessKitti:
     logger = logging.getLogger(__name__)
 
     dic_jo = {
-        'train': dict(X=[], Y=[], names=[], kps=[], K=[], clst=defaultdict(lambda: defaultdict(list))),
-        'val': dict(X=[], Y=[], names=[], kps=[], K=[], clst=defaultdict(lambda: defaultdict(list))),
-        'test': dict(X=[], Y=[], names=[], kps=[], K=[], clst=defaultdict(lambda: defaultdict(list))),
+        'train': dict(features=[], predictions=[], labels=[], names=[] ),
+        'val': dict(features=[], predictions=[], labels=[], names=[] ),
+        'test': dict(features=[], predictions=[], labels=[], names=[] ),
         'version': __version__,
     }
+
     dic_names = defaultdict(lambda: defaultdict(list))
     dic_std = defaultdict(lambda: defaultdict(list))
     categories_gt = dict(train=['Pedestrian', 'Person_sitting'], val=['Pedestrian'])
 
-    def __init__(self, dir_ann, mode='mono', iou_min=0.3, sample=False):
-
+    def __init__(self, dir_ann, sample=False):
         self.dir_ann = dir_ann
-        self.mode = mode
-        self.iou_min = iou_min
+
         self.sample = sample
 
         assert os.path.isdir(self.dir_ann), "Annotation directory not found"
         assert any(os.scandir(self.dir_ann)), "Annotation directory empty"
         assert os.path.isdir(self.dir_gt), "Ground truth directory not found"
         assert any(os.scandir(self.dir_gt)), "Ground-truth directory empty"
-        if self.mode == 'stereo':
-            assert os.path.isdir(self.dir_ann + '_right'), "Annotation directory for right images not found"
-            assert any(os.scandir(self.dir_ann + '_right')), "Annotation directory for right images empty"
-        elif not os.path.isdir(self.dir_ann + '_right') or not any(os.scandir(self.dir_ann + '_right')):
-            warnings.warn('Horizontal flipping not applied as annotation directory for right images not found/empty')
-        assert self.mode in ('mono', 'stereo'), "modality not recognized"
 
-        self.names_gt = tuple(os.listdir(self.dir_gt))
-        self.list_gt = glob.glob(self.dir_gt + '/*.txt')
+        #print(self.names_gt) 
+        self.seq_list_gt = glob.glob(self.dir_gt+"/*")
+        self.names_gt = glob.glob(self.dir_gt+"/*/*.txt", recursive=True)
+        self.names_gt.sort()
+        self.names_gt = tuple(self.names_gt)
+
         now = datetime.datetime.now()
         now_time = now.strftime("%Y%m%d-%H%M")[2:]
         dir_out = os.path.join('data', 'arrays')
-        self.path_joints = os.path.join(dir_out, 'joints-kitti-' + self.mode + '-' + now_time + '.json')
-        self.path_names = os.path.join(dir_out, 'names-kitti-' + self.mode + '-' + now_time + '.json')
-        path_train = os.path.join('splits', 'kitti_train.txt')
-        path_val = os.path.join('splits', 'kitti_val.txt')
-        self.set_train, self.set_val = split_training(self.names_gt, path_train, path_val)
+        dir_out = "/media/ruthz/DATA/data/arrays"
+        # * output 
+        self.path_joints = os.path.join(dir_out, 'joints-kitti-' + now_time + '.json')
+        self.path_names = os.path.join(dir_out, 'names-kitti-' + now_time + '.json')
+
+        path_train = os.path.join('splits', 'jrdb_train.txt')
+        path_val = os.path.join('splits', 'jrdb_val.txt')
+        #self.set_train, self.set_val = split_training(self.names_gt, path_train, path_val)
+        
+        base_dir = self.dir_gt   
+        self.set_train, self.set_val = split_training_jrdb(base_dir, path_train, path_val)
+        #print(self.set_train, self.set_val)
         self.phase, self.name = None, None
         self.stats = defaultdict(int)
         self.stats_stereo = defaultdict(int)
+        self.iou_min = 0.3
+        
 
     def run(self):
         # self.names_gt = ('002282.txt',)
-        for self.name in self.names_gt:
+        for self.name in self.names_gt:##each ground truth file 
+            #print(self.name)
             # Extract ground truth
-            path_gt = os.path.join(self.dir_gt, self.name)
-            basename, _ = os.path.splitext(self.name)
-            self.phase, file_not_found = self._factory_phase(self.name)
+            path_gt = self.name
+            basename = self.name.split('.')[0]
+            basenames = basename.split('/')
+            basename = basenames[-2]+"/"+basenames[-1]
+            self.phase, file_not_found = self._factory_phase(self.name)##split training and validation
             category = 'all' if self.phase == 'train' else 'pedestrian'
             if file_not_found:
                 self.stats['fnf'] += 1
                 continue
 
-            boxes_gt, labels, _, _, _ = parse_ground_truth(path_gt, category=category, spherical=True)
-            self.stats['gt_' + self.phase] += len(boxes_gt)
-            self.stats['gt_files'] += 1
-            self.stats['gt_files_ped'] += min(len(boxes_gt), 1)  # if no boxes 0 else 1
+            # * path_gt should be individual ground truth 
+            boxes_gt, labels, truncs_gt, occs_gt, _ = parse_ground_truth(path_gt, category=category, spherical=False)
+
+            #self.stats['gt_' + self.phase] += len(boxes_gt)
+            #self.stats['gt_files'] += 1
+            #self.stats['gt_files_ped'] += min(len(boxes_gt), 1)  # if no boxes 0 else 1
+            
             self.dic_names[basename + '.jpg']['boxes'] = copy.deepcopy(boxes_gt)
-            self.dic_names[basename + '.jpg']['ys'] = copy.deepcopy(labels)
+            self.dic_names[basename + '.jpg']['labels'] = copy.deepcopy(labels)
+            self.dic_names[basename + '.jpg']['truncs'] = copy.deepcopy(truncs_gt)
+            self.dic_names[basename + '.jpg']['occs'] = copy.deepcopy(occs_gt)
 
-            # Extract annotations
-            dic_boxes, dic_kps, dic_gt = self.parse_annotations(boxes_gt, labels, basename)
-            if dic_boxes is None:  # No annotations
-                continue
-            self.dic_names[basename + '.jpg']['K'] = copy.deepcopy(dic_gt['K'])
-            self.dic_jo[self.phase]['K'].append(dic_gt['K'])
+            # Extract annotations along with features
+            dic_annotations = self.parse_annotations(boxes_gt=boxes_gt, labels=labels, truncs_gt=truncs_gt, occs_gt=occs_gt, basename=basename)
 
-            # Match each set of keypoint with a ground truth
-            for ii, boxes_gt in enumerate(dic_boxes['gt']):
-                kps, kps_r = torch.tensor(dic_kps['left'][ii]), torch.tensor(dic_kps['right'][ii])
-                matches = get_iou_matches(dic_boxes['left'][ii], boxes_gt, self.iou_min)
-                self.stats['flipping_match'] += len(matches) if ii == 1 else 0
-                for (idx, idx_gt) in matches:
-                    cat_gt = dic_gt['labels'][ii][idx_gt][-1]
-                    if cat_gt not in self.categories_gt[self.phase]: # only for training as cyclists are also extracted
-                        continue
-                    kp = kps[idx:idx + 1]
-                    kk = dic_gt['K']
-                    label = dic_gt['labels'][ii][idx_gt][:-1]
-                    self.stats['match'] += 1
-                    assert len(label) == 10, 'dimensions of monocular label is wrong'
+            #assert len(list(dic_annotations.values())) == len(boxes_gt), print("missing features for ground truth")
+            #print('truth', dic_annotations)
 
-                    if self.mode == 'mono':
-                        self._process_annotation_mono(kp, kk, label)
-                    else:
-                        self._process_annotation_stereo(kp, kk, label, kps_r)
+
+            # Match each feature with a ground truth
+            matches = get_iou_matches_jrdb(dic_annotations, self.iou_min)
+            self._process_annotation_fpointnet(matches, dic_annotations)
 
         with open(self.path_joints, 'w') as file:
             json.dump(self.dic_jo, file)
         with open(os.path.join(self.path_names), 'w') as file:
             json.dump(self.dic_names, file)
-        self._cout()
+        # self._cout()
 
-    def parse_annotations(self, boxes_gt, labels, basename):
+    def parse_annotations(self, boxes_gt, labels, truncs_gt, occs_gt, basename):
 
-        path_im = os.path.join(self.dir_images, basename + '.jpg')
-        path_calib = os.path.join(self.dir_kk, basename + '.txt')
-        min_conf = 0 if self.phase == 'train' else 0.1
+        basenames = basename.split('/')
+        path_ann = os.path.join(self.dir_ann, basenames[0]+'/features_3d/'+basenames[1]+ '.yaml')
+        annotations = dict()
+        annotations['features'] = open_features(path_ann)
+        annotations['gt'] = boxes_gt 
+        annotations['labels'] = labels #+ truncs_gt + occs_gt
+        annotations['truncs'] = truncs_gt
+        annotations['occs'] = occs_gt
+        return annotations#, kk, tt
 
-        # Check image size
-        with Image.open(path_im) as im:
-            width, height = im.size
-
-        # Extract left keypoints
-        annotations, kk, _ = factory_file(path_calib, self.dir_ann, basename)
-        boxes, keypoints = preprocess_pifpaf(annotations, im_size=(width, height), min_conf=min_conf)
-        if not keypoints:
-            return None, None, None
-
-        # Stereo-based horizontal flipping for training (obtaining ground truth for right images)
-        self.stats['instances'] += len(keypoints)
-        annotations_r, _, _ = factory_file(path_calib, self.dir_ann, basename, ann_type='right')
-        boxes_r, keypoints_r = preprocess_pifpaf(annotations_r, im_size=(width, height), min_conf=min_conf)
-
-        if not keypoints_r:  # Duplicate the left one(s)
-            all_boxes_gt, all_labels = [boxes_gt], [labels]
-            boxes_r, keypoints_r = boxes[0:1].copy(), keypoints[0:1].copy()
-            all_boxes, all_keypoints = [boxes], [keypoints]
-            all_keypoints_r = [keypoints_r]
-
-        elif self.phase == 'train':
-            # GT)
-            #print(basename)
-            boxes_gt_flip, ys_flip = flip_labels(boxes_gt, labels, im_w=width)
-            # New left
-            boxes_flip = flip_inputs(boxes_r, im_w=width, mode='box')
-            keypoints_flip = flip_inputs(keypoints_r, im_w=width)
-
-            # New right
-            keypoints_r_flip = flip_inputs(keypoints, im_w=width)
-
-            # combine the 2 modes
-            all_boxes_gt = [boxes_gt, boxes_gt_flip]
-            all_labels = [labels, ys_flip]
-            all_boxes = [boxes, boxes_flip]
-            all_keypoints = [keypoints, keypoints_flip]
-            all_keypoints_r = [keypoints_r, keypoints_r_flip]
-
-        else:
-            all_boxes_gt, all_labels = [boxes_gt], [labels]
-            all_boxes, all_keypoints = [boxes], [keypoints]
-            all_keypoints_r = [keypoints_r]
-
-        dic_boxes = dict(left=all_boxes, gt=all_boxes_gt)
-        dic_kps = dict(left=all_keypoints, right=all_keypoints_r)
-        dic_gt = dict(K=kk, labels=all_labels)
-        return dic_boxes, dic_kps, dic_gt
+    def _process_annotation_fpointnet(self, matches, dic_annotations):
+        for match in matches: 
+            print(self.name,match[0], match[1])
+            self.dic_jo[self.phase]['features'].append(dic_annotations['features'][match[0]]['feature'])#from fpointnet
+            prediction = [dic_annotations['features'][match[0]]['x'],
+                        dic_annotations['features'][match[0]]['y'],
+                        dic_annotations['features'][match[0]]['z'],
+                        dic_annotations['features'][match[0]]['l'],
+                        dic_annotations['features'][match[0]]['w'],
+                        dic_annotations['features'][match[0]]['h']
+                        ]
+            self.dic_jo[self.phase]['predictions'].append(prediction)#from fpointnet
+            self.dic_jo[self.phase]['labels'].append(dic_annotations['labels'][match[1]]  )#from groundtruth 
+            self.dic_jo[self.phase]['names'].append(self.name)
+        return
 
     def _process_annotation_mono(self, kp, kk, label):
         """For a single annotation, process all the labels and save them"""
         kp = kp.tolist()
-        inp = preprocess_monoloco(kp, kk).view(-1).tolist()# * check this for JRDB 
+        inp = preprocess_monoloco(kp, kk).view(-1).tolist()
 
         # Save
         self.dic_jo[self.phase]['kps'].append(kp)
@@ -344,7 +315,7 @@ def parse_ground_truth(path_gt, category, spherical=False):
     truncs_gt = []  # Float from 0 to 1
     occs_gt = []  # Either 0,1,2,3 fully visible, partly occluded, largely occluded, unknown
     lines = []
-
+    print("gt", path_gt)
     with open(path_gt, "r") as f_gt:
         for line_gt in f_gt:
             line = line_gt.split()
@@ -358,8 +329,6 @@ def parse_ground_truth(path_gt, category, spherical=False):
             dd = float(math.sqrt(xyz[0] ** 2 + xyz[1] ** 2 + xyz[2] ** 2))
             yaw = float(line[15])
             ##jrdbcorrections
-            #print(yaw)
-            #print(f_gt)
             #assert - math.pi <= yaw <= math.pi
             alpha = float(line[4])
             sin, cos, yaw_corr = correct_angle(yaw, xyz)
@@ -370,29 +339,18 @@ def parse_ground_truth(path_gt, category, spherical=False):
                 rtp = to_spherical(xyz)
                 loc = rtp[1:3] + xyz[2:3] + rtp[0:1]  # [theta, psi, z, r]
             else:
-                loc = xyz + [dd]
+                loc = xyz + [yaw] + [dd]
             cat = line[0]  # 'Pedestrian', or 'Person_sitting' for people
-            output = loc + hwl + [sin, cos, yaw, cat]
+            output = loc + hwl + [sin, cos, yaw, cat] +[line[1]]+[line[2]]
+
             labels.append(output)
             lines.append(line_gt)
     return boxes_gt, labels, truncs_gt, occs_gt, lines
 
 
-def factory_file(path_calib, dir_ann, basename, ann_type='left'):
-    """Choose the annotation and the calibration files"""
-
-    assert ann_type in ('left', 'right')
-    p_left, p_right = get_calibration(path_calib)
-
-    if ann_type == 'left':
-        kk, tt = p_left[:]
-        path_ann = os.path.join(dir_ann, basename + '.jpg.predictions.json')
-
-    # The right folder is called <NameOfLeftFolder>_right
-    else:
-        kk, tt = p_right[:]
-        path_ann = os.path.join(dir_ann + '_right', basename + '.jpg.predictions.json')
-
-    annotations = open_annotations(path_ann)
-
-    return annotations, kk, tt
+def factory_file(dir_ann, basename):#, ann_type='left'):
+    """Choose the annotation files"""
+    basenames = basename.split('/')
+    path_ann = os.path.join(dir_ann, basenames[0]+'/features_3d/'+basenames[1]+ '.yaml')
+    annotations = open_features(path_ann)
+    return annotations#, kk, tt
